@@ -19,11 +19,17 @@
 #include <Adafruit_PCF8591.h>
 #include "Adafruit_GFX.h"
 #include "Adafruit_HX8357.h"
+
+// Change the defines in this file to match your local settings!
 #include "LocalSettings.h"
 
-
+// OneWire bus is on pin 4
 #define ONE_WIRE_BUS 4
+
+// Reset the wifi module using pin 7
 #define WIFI_RST 7
+
+// PyPortal Titano TFT control
 #define TFT_BACKLIGHT 25 // Set the backlight power
 #define TFT_D0 34        // Data bit 0 pin (MUST be on PORT byte boundary)
 #define TFT_WR 26        // Write-strobe pin (CCL-inverted timer output)
@@ -32,10 +38,6 @@
 #define TFT_RST 24       // Reset pin
 #define TFT_RD 9         // Read-strobe pin
 #define TFT_TE 12
-
-
-
-// PyPortal Titano
 Adafruit_HX8357 tft = Adafruit_HX8357(tft8bitbus, TFT_D0, TFT_WR, TFT_DC, TFT_CS, TFT_RST, TFT_RD);
 
 // Mutex around print to avoid two threads trying to print at the same time.
@@ -218,7 +220,7 @@ static void connectThingsBoard() {
    // Connects to my MQTT server.
    // Use your own API key and server :-P
    Print("\nConnecting ThingsBoard...");
-   while (WiFi.ping("dgriffith.com.au") < 0) {
+   while (WiFi.ping(MQTT_SERVER) < 0) {
      Print("Ping check failed, reconnecting wifi.");
      connectWiFi();
    }
@@ -264,7 +266,7 @@ static void updateCloud(void* pvParameters)
 
 static void readSensors(void* pvParameters)
 {
-  // Read the onewire and analog sensors.
+  // Read the onewire and analog sensors every two seconds.
   char buffer[40];
   DeviceAddress myDevice;
   while(1) { 
@@ -395,6 +397,7 @@ static void calcPumpSpeed(void* pvParameters) {
 }
 
 static void updateScreen(void* pvParameters) {
+  // Updates the screen with all the values in the sensorData array every two seconds.
   while(1) {
   xSemaphoreTake(adcMutex, portMAX_DELAY);  
   for (int i=0;i<12;i++) {
@@ -436,7 +439,7 @@ void findDevices() {
 }
 
 void setup() {
-
+ // Uncomment this if you want to debug and catch the first few lines of output, but the USB serial is pretty quick to connect after flashing anyway
  //while(!Serial);
  // Kick start the I/O board
  pcf.begin();
@@ -456,17 +459,21 @@ void setup() {
  // We'll wait ourselves for the result.
  sensors.setWaitForConversion(false);
 
- // Create tasks 
+ // Create tasks and allocate 512 bytes of stack space to each one.
+ // Each task has the same priority.
  xTaskCreate(updateCloud, "MQTT", 512, NULL, 1, NULL);
  xTaskCreate(readSensors, "readData", 512, NULL,1, NULL);
  xTaskCreate(drivePump, "doPump", 512, NULL, 1, NULL);
  xTaskCreate(calcPumpSpeed, "pumpSpeed", 512, NULL, 1, NULL);
  xTaskCreate(updateScreen, "updateScreen", 512, NULL, 1, NULL);
+ // Let's get this party started.
  vTaskStartScheduler();
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
+  // This just prints the available stack space in the FreeRTOS idle task (loop in arduino)
+  // If stack space gets to zero things will crash. The TaskCreate settings above are fine.
+  // There's plenty of ram to go around in the PyPortal Titano
 
     Println("Looping in the Idle Task.");
 
