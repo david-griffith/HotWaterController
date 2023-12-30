@@ -22,7 +22,7 @@
  - If the pump runs below 30 percent the difference is decreased by 0.98 every calculation cycle. This increases the pump speed so that residence time in the pipework from the collectors is minimised (too much cool off in the pipes if the flow is too low.)
  - Overall this should give a reasonably adaptive system that tries to maximise solar gain and minimise loss in pipework.
  - If the duty cycle is above 90 or below 10, round to 100 or 0 respectively to avoid short pulses on the pump.
- - Once the temperature difference drops below 4 degrees the pump is shut off.\
+ - Once the temperature difference drops below 4 degrees the pump is shut off.
  - If the ColdSensor temperature is above 70 degrees, trigger a cool-off cycle. When the HotSensor is 30 degrees below the ColdSensor (eg late afternoon or night), turn on the pump and circulate hot water from the tank through the collectors until the ColdSensor temp drops below 60 degrees. This helps prevent over temperature events and loss of hot water via the pressure relief valve on the tank.
  - If the collector temperature is greater than 100 degrees, turn on the pump regardless of the temperature difference between hot and cold sensors.
  
@@ -32,4 +32,4 @@
  - Updates the PyPortal Titano display with basic information.
  
 ### Monitoring
- - Sends data via MQTT to a ThingsBoard instance for display. The ThingsBoard instance also sends alert emails if the tank temperature drops below a lwoer threshold.
+ - Sends data via MQTT to a ThingsBoard instance for display. The ThingsBoard instance also sends alert emails if the tank temperature drops below a lwoer threshold. Setting up a ThingsBoard or MQTT server is left as an exercise for the user.
