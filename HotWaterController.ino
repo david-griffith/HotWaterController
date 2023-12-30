@@ -157,7 +157,7 @@ static float lookupTemp(int rawValue) {
 
 static void connectWiFi() {
 
-   while ( WiFi.status()  != WL_CONNECTED || WiFi.RSSI() == -255)
+   while ( WiFi.status()  != WL_CONNECTED || WiFi.RSSI() == 0)
   {
     WiFi.end();
     Println("WiFi resetting and connecting...");
@@ -198,7 +198,7 @@ static void updateCloud(void* pvParameters)
   char tempBuf[30];
   while(1) { 
     vTaskDelay(5000/portTICK_PERIOD_MS);
-    if (!net.connected() || WiFi.RSSI() == -255) {
+    if (!net.connected() || WiFi.RSSI() == 0) {
       connectWiFi();
     }
     if (!client.connected()) {
@@ -243,12 +243,7 @@ static void readSensors(void* pvParameters)
     sensorData[5] = smooth(sensorData[5],lookupTemp(pcf.analogRead(0)));
     sensorData[6] = smooth(sensorData[6],lookupTemp(pcf.analogRead(1)));
     xSemaphoreGive(adcMutex);
-    long rssi = WiFi.RSSI();
-    if ( rssi < 0 && rssi > -100) {
-      sensorData[7] = rssi;
-    } else {
-      sensorData[7] = -255;
-    }
+    sensorData[7] =  WiFi.RSSI();
     sensorData[8] = pumpSpeed;
     sensorData[9] = wifiConnects;
     sensorData[10] = MQTTConnects;
