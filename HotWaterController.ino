@@ -1,3 +1,15 @@
+/* 
+ HotWaterController program.
+ Reads some analog sensors and controls a circulating pump to circulate water through solar collectors to efficiently heat a tank of water.
+ A suite of Dallas Onewire sensors provide monitoring of other temperatures in the system.  
+ We are using FreeRTOS to allow different tasks to run simultaneously.
+ There is :
+ A sensor reading task.
+ A TFT display print task.
+ A pump control task.
+ A pump speed calculation task.
+ A cloud update task.
+*/
 #include <FreeRTOS_SAMD51.h>
 #include <SPI.h>
 #include <WiFiNINA.h>
@@ -7,6 +19,7 @@
 #include <Adafruit_PCF8591.h>
 #include "Adafruit_GFX.h"
 #include "Adafruit_HX8357.h"
+#include "LocalSettings.h"
 
 
 #define ONE_WIRE_BUS 4
@@ -20,18 +33,20 @@
 #define TFT_RD 9         // Read-strobe pin
 #define TFT_TE 12
 
-#define START_MAX_DIFF 8;
-#define START_MIN_DIFF 4;
+
 
 // PyPortal Titano
 Adafruit_HX8357 tft = Adafruit_HX8357(tft8bitbus, TFT_D0, TFT_WR, TFT_DC, TFT_CS, TFT_RST, TFT_RD);
 
-
+// Mutex around print to avoid two threads trying to print at the same time.
 SemaphoreHandle_t printMutex = xSemaphoreCreateMutex();
+// Mutex around the ADC to avoid two threads accessing the PCF8591 chip at the same time.
 SemaphoreHandle_t adcMutex = xSemaphoreCreateMutex();
+// Mutex around the pumpSpeed variable to avoid the calculation and the pump drive threads from accessing the variable at the same time.
 SemaphoreHandle_t speedMutex = xSemaphoreCreateMutex();
 
- 
+// Addesses of the oneWire sensors we are using.
+// On bootup the program scans the bus and outputs these addresses on the serial port.
 DeviceAddress owRoms[][8] = {
             {0x28, 0xF7, 0xE2, 0x81, 0x94, 0x21, 0x06, 0x88 },
             {0x28, 0xAB, 0x83, 0x7F, 0x94, 0x21, 0x06, 0x63 },
@@ -39,7 +54,10 @@ DeviceAddress owRoms[][8] = {
             {0x28, 0x62, 0xC7, 0x7F, 0x94, 0x21, 0x06, 0x9C },
             {0x28, 0x7A, 0x5B, 0x85, 0x94, 0x21, 0x06, 0x9A },
             };
- 
+
+// Sensor names.
+// Ensure that the order of these names matches the owRom addresses above.
+// Extra names are added on the end for the analog sensors and other bits of info.
 char sensorNames[][40] = {"Ambient_Temperature",
               "Outlet_Temperature",
               "Inlet_Temperature",
@@ -52,22 +70,29 @@ char sensorNames[][40] = {"Ambient_Temperature",
               "wifiConnects",
               "MQTTConnects",
               "maxDiff"};
-
+              
+// The combined data from all sensors above is stored in this array.
 float sensorData[12] = {0,0,0,0,0,0,0,0,0,0,0,0};
+// Pump speed from 0 to 100 percent.
+uint8_t pumpSpeed = 0;
+// Wifi stats.
 uint8_t wifiConnects = 0;
 uint8_t MQTTConnects = 0;
 
+
+// Set up networking.
 WiFiClient net;
 MQTTClient client(500);
 
 // Set up the A/D board
+// This is actually a generic PCF8951 board I got off ebay running over I2C.
 Adafruit_PCF8591 pcf = Adafruit_PCF8591();
 #define ADC_REFERENCE_VOLTAGE 3.3
 
 // A few buffers.
 char stringBuffer[500];
 char ptrTaskList[250];
-uint8_t pumpSpeed = 0;
+
 
 // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
 OneWire oneWire(ONE_WIRE_BUS);
@@ -77,8 +102,11 @@ DallasTemperature sensors(&oneWire);
 
 
 static void setupTFT() {
+  // Set up the display. Print these names (that match the order in the sensorData array) down the screen on the left, the update routine does the corresponding values a little to the right.
+  // Note that DMA is turned off in Adafruit_SPITFT.h, it doesn't play well with FreeRTOS it seems.
+  
   String screenNames[] = {"Ambient","Tank Outlet","Tank Inlet","Collector In","Collector Out","Cold Sensor","Collector Top","RSSI","Pump Drive","Wifi Connects","MQTT Connects", "Max Diff"};
- // Note that DMA is turned off in Adafruit_SPITFT.h, it doesn't play well with FreeRTOS it seems.
+  // Turn on the backlight and rest the TFT.
   pinMode(TFT_BACKLIGHT, OUTPUT);
   digitalWrite(TFT_BACKLIGHT, HIGH);
   pinMode(TFT_RST, OUTPUT);
@@ -94,6 +122,7 @@ static void setupTFT() {
   tft.setTextSize(2);
   tft.setTextColor(HX8357_GREEN);
   tft.setTextWrap(true);
+  // Loop through the screen names and print them down the side of the screen.
   for (int i=0;i<12;i++) {
    tft.setCursor(0,i*20);
    tft.print(screenNames[i]);
@@ -101,14 +130,17 @@ static void setupTFT() {
 }
 
 float sensorGet(char* wantedName) {
- // Return the value given by the name
+ // A simple helper function to return the value given by the name
+ // Just like a dictionary would.
  for(int i = 0; i<13; i++) {
   if (strcmp(sensorNames[i],wantedName)==0) return sensorData[i];
  }
+ // Return nonsense value if not in the list.
   return -255;
 }
 
 void sensorSet(char* sensorName, float sensorValue) {
+ // Sets a value by it's name, like a dictionary. 
  for(int i = 0; i<13; i++) {
   if (strcmp(sensorNames[i],sensorName)==0) {
     sensorData[i] = sensorValue;
@@ -119,13 +151,15 @@ void sensorSet(char* sensorName, float sensorValue) {
 float smooth(float smoothValue, float rawValue) {
   // returns a smoothed value by shifting the smoothed value 20 percent of the difference
   // between raw and smooth.
-  // Initial load
+  // Initial load if smoothValue is zero
   if (smoothValue == 0.0) return rawValue * 0.95;
   float diff = rawValue - smoothValue;
   return smoothValue + (diff * 0.20);
 }
 
-void Println(const char *str) { // use instead of Println(char *str)
+// functions around Serial.println and print to avoid two threads talking at the same time.
+void Println(const char *str) { 
+  // use instead of Println(char *str)
   xSemaphoreTake(printMutex, portMAX_DELAY);
   Serial.println(str);
   xSemaphoreGive(printMutex);
@@ -138,6 +172,11 @@ void Print(const char *str) { // use instead of Serial.println(char *str)
 }
 
 static float lookupTemp(int rawValue) {
+  // Converts the raw ADC value from the analog NTC thermistors to a temperature value.
+  // On my board a 1k resistor pulls the ADC input towards VCC and their internal resistance pulls the ADC input towards ground.
+  // Loss of connection gives therefore gives high ADC values which relate to temps below zero.
+  // Uses interpolation between 17 lookup values. Didn't bother with negatives, it's not that cold where I live.
+  // Put your own function here for your particular sensor, all I had was a table of resistances and temperatures to work with from the original manufacturer.
   float temp = -255;
   float tempsArray[] = {0,10,20,30,40,50,60,70,80,90,100,110,120,130,140,150,160};
   float rawValueArray[] = {243.0,238.0,231.0,222.0,210.0,197.0,181.0,164.0,147.0,125.0,106.0,89.0,73.0,48.0,38.0};
@@ -156,7 +195,7 @@ static float lookupTemp(int rawValue) {
 }
 
 static void connectWiFi() {
-
+   // Resets the ESP32 daughterboard and restarts wifi.
    while ( WiFi.status()  != WL_CONNECTED || WiFi.RSSI() == 0)
   {
     WiFi.end();
@@ -169,32 +208,36 @@ static void connectWiFi() {
     digitalWrite(WIFI_RST, HIGH);
     delay(1000); 
     wifiConnects ++;
-    WiFi.begin("DavesInnernet","Fucker09");
+    WiFi.begin(MY_SSID,WIFI_PASSWORD);
     delay(5000);
    }
    Println("WiFi Connected");
 }
 
 static void connectThingsBoard() {
-    Print("\nConnecting ThingsBoard...");
-    while (WiFi.ping("dgriffith.com.au") < 0) {
-      Print("Ping check failed, reconnecting wifi.");
-      connectWiFi();
-    }
-    Println("Ping check good");
-    while (!client.connected()) {
-       MQTTConnects++;
-       Print("ThingsBoard connection init...");
-       client.begin("dgriffith.com.au", net);
-       client.connect("ClientID","xD2kUeR9PIyYYGrACAId");
-       delay(5000);
-       
-    }
-    Println("\nThingsBoard connected.");
+   // Connects to my MQTT server.
+   // Use your own API key and server :-P
+   Print("\nConnecting ThingsBoard...");
+   while (WiFi.ping("dgriffith.com.au") < 0) {
+     Print("Ping check failed, reconnecting wifi.");
+     connectWiFi();
+   }
+   Println("Ping check good");
+   while (!client.connected()) {
+      MQTTConnects++;
+      Print("ThingsBoard connection init...");
+      client.begin(MQTT_SERVER, net);
+      client.connect("ClientID",APIKEY);
+      delay(5000);    
+   }
+   Println("\nThingsBoard connected.");
 }
 
 static void updateCloud(void* pvParameters)
 {
+  // Sends data to the MQTT server every 5 seconds.
+  // It's my server, there's no rate limites.
+  // Adjust the taskDelay accordingly for your server.
   char tempBuf[30];
   while(1) { 
     vTaskDelay(5000/portTICK_PERIOD_MS);
