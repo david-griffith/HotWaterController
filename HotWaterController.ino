@@ -241,6 +241,11 @@ static void updateCloud(void* pvParameters)
   // It's my server, there's no rate limites.
   // Adjust the taskDelay accordingly for your server.
   char tempBuf[30];
+
+  // Set up MQTT and wifi
+  connectWiFi();
+  connectThingsBoard();
+  
   while(1) { 
     vTaskDelay(5000/portTICK_PERIOD_MS);
     if (!net.connected() || WiFi.RSSI() == 0) {
@@ -450,9 +455,6 @@ void setup() {
  setupTFT();
  Println("Done");
  
- // Set up MQTT and wifi
- connectWiFi();
- connectThingsBoard();
  // Set up Onewire sensors
  findDevices();
  sensors.begin();
