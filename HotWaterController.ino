@@ -225,6 +225,7 @@ static void connectThingsBoard() {
      connectWiFi();
    }
    Println("Ping check good");
+   client.disconnect();
    while (!client.connected()) {
       MQTTConnects++;
       Print("ThingsBoard connection init...");
@@ -248,6 +249,7 @@ static void updateCloud(void* pvParameters)
   
   while(1) { 
     vTaskDelay(5000/portTICK_PERIOD_MS);
+    client.loop();
     if (!net.connected() || WiFi.RSSI() == 0) {
       connectWiFi();
     }
