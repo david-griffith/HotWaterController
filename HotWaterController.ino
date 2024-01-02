@@ -131,7 +131,7 @@ static void setupTFT() {
   }
 }
 
-float sensorGet(char* wantedName) {
+float sensorGet(const char* wantedName) {
  // A simple helper function to return the value given by the name
  // Just like a dictionary would.
  for(int i = 0; i<13; i++) {
@@ -141,7 +141,7 @@ float sensorGet(char* wantedName) {
   return -255;
 }
 
-void sensorSet(char* sensorName, float sensorValue) {
+void sensorSet(const char* sensorName, float sensorValue) {
  // Sets a value by it's name, like a dictionary. 
  for(int i = 0; i<13; i++) {
   if (strcmp(sensorNames[i],sensorName)==0) {
@@ -198,7 +198,7 @@ static float lookupTemp(int rawValue) {
 
 static void connectWiFi() {
    // Resets the ESP32 daughterboard and restarts wifi.
-   while ( WiFi.status()  != WL_CONNECTED || WiFi.RSSI() == 0)
+   while ( WiFi.status()  != WL_CONNECTED || WiFi.RSSI() > -1)
   {
     WiFi.end();
     Println("WiFi resetting and connecting...");
