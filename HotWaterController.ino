@@ -46,6 +46,9 @@ SemaphoreHandle_t printMutex = xSemaphoreCreateMutex();
 SemaphoreHandle_t adcMutex = xSemaphoreCreateMutex();
 // Mutex around the pumpSpeed variable to avoid the calculation and the pump drive threads from accessing the variable at the same time.
 SemaphoreHandle_t speedMutex = xSemaphoreCreateMutex();
+// Mutex around SPI access as both the TFT and Wifi use it.
+SemaphoreHandle_t spiMutex = xSemaphoreCreateMutex();
+
 
 // Addesses of the oneWire sensors we are using.
 // On bootup the program scans the bus and outputs these addresses on the serial port.
@@ -210,7 +213,9 @@ static void connectWiFi() {
     digitalWrite(WIFI_RST, HIGH);
     delay(1000); 
     wifiConnects ++;
-    WiFi.begin(MY_SSID,WIFI_PASSWORD);
+    xSemaphoreTake(spiMutex, portMAX_DELAY);
+      WiFi.begin(MY_SSID,WIFI_PASSWORD);
+    xSemaphoreGive(spiMutex);
     delay(5000);
    }
    Println("WiFi Connected");
@@ -220,19 +225,31 @@ static void connectThingsBoard() {
    // Connects to my MQTT server.
    // Use your own API key and server :-P
    Print("\nConnecting ThingsBoard...");
-   while (WiFi.ping(MQTT_SERVER) < 0) {
-     Print("Ping check failed, reconnecting wifi.");
-     connectWiFi();
+   int8_t pingResult = 0;
+   do {
+      xSemaphoreTake(spiMutex, portMAX_DELAY);
+        pingResult = WiFi.ping(MQTT_SERVER);
+      xSemaphoreGive(spiMutex);
+      Print("Ping check failed, reconnecting wifi.");
+      connectWiFi();
    }
+   while ( pingResult < 0);
    Println("Ping check good");
-   client.disconnect();
-   while (!client.connected()) {
+   xSemaphoreTake(spiMutex, portMAX_DELAY);
+      client.disconnect();
+   xSemaphoreGive(spiMutex);  
+   bool clientConnected = false;
+   do {
       MQTTConnects++;
       Print("ThingsBoard connection init...");
-      client.begin(MQTT_SERVER, net);
-      client.connect("ClientID",APIKEY);
+      xSemaphoreTake(spiMutex, portMAX_DELAY);
+        client.begin(MQTT_SERVER, net);
+        client.connect("ClientID",APIKEY);
+        clientConnected = client.connected();
+      xSemaphoreGive(spiMutex);
       delay(5000);    
    }
+   while (!clientConnected);
    Println("\nThingsBoard connected.");
 }
 
@@ -249,8 +266,12 @@ static void updateCloud(void* pvParameters)
   
   while(1) { 
     vTaskDelay(5000/portTICK_PERIOD_MS);
-    client.loop();
-    if (!net.connected() || WiFi.RSSI() == 0) {
+    xSemaphoreTake(spiMutex, portMAX_DELAY);
+      client.loop();
+      uint8_t myRSSI = WiFi.RSSI();
+    xSemaphoreGive(spiMutex);
+    
+    if (!net.connected() || myRSSI > -1) {
       connectWiFi();
     }
     if (!client.connected()) {
@@ -266,7 +287,9 @@ static void updateCloud(void* pvParameters)
     }
     strcat(stringBuffer,"}");
     //Println(stringBuffer);
-    client.publish("v1/devices/me/telemetry", stringBuffer);
+    xSemaphoreTake(spiMutex, portMAX_DELAY);
+      client.publish("v1/devices/me/telemetry", stringBuffer);
+    xSemaphoreGive(spiMutex);
     Println("Pushed!");
   }
 }
@@ -292,10 +315,12 @@ static void readSensors(void* pvParameters)
     Print("Looking up analog values....");
     // Fill in the analog values. Mutex around all the pcf commands as we're driving the output concurrently.
     xSemaphoreTake(adcMutex, portMAX_DELAY);
-    sensorData[5] = smooth(sensorData[5],lookupTemp(pcf.analogRead(0)));
-    sensorData[6] = smooth(sensorData[6],lookupTemp(pcf.analogRead(1)));
+      sensorData[5] = smooth(sensorData[5],lookupTemp(pcf.analogRead(0)));
+      sensorData[6] = smooth(sensorData[6],lookupTemp(pcf.analogRead(1)));
     xSemaphoreGive(adcMutex);
-    sensorData[7] =  WiFi.RSSI();
+    xSemaphoreTake(spiMutex, portMAX_DELAY);
+      sensorData[7] =  WiFi.RSSI();
+    xSemaphoreGive(spiMutex);
     sensorData[8] = pumpSpeed;
     sensorData[9] = wifiConnects;
     sensorData[10] = MQTTConnects;
@@ -406,11 +431,14 @@ static void calcPumpSpeed(void* pvParameters) {
 static void updateScreen(void* pvParameters) {
   // Updates the screen with all the values in the sensorData array every two seconds.
   while(1) {
+  Println("Update Screen");
   xSemaphoreTake(adcMutex, portMAX_DELAY);  
   for (int i=0;i<12;i++) {
-  tft.setCursor(200, i*20);
-  tft.fillRect(200,i*20,90,i*20+20,0x0000);
-  tft.print(sensorGet(sensorNames[i]));
+    xSemaphoreTake(spiMutex, portMAX_DELAY);  
+      tft.setCursor(200, i*20);
+      tft.fillRect(200,i*20,90,i*20+20,0x0000);
+      tft.print(sensorGet(sensorNames[i]));
+    xSemaphoreGive(spiMutex);
   }
   xSemaphoreGive(adcMutex);
   vTaskDelay(2000/portTICK_PERIOD_MS);
