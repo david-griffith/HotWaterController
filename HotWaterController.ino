@@ -274,9 +274,14 @@ static void updateCloud(void* pvParameters)
     if (!net.connected() || myRSSI > -1) {
       connectWiFi();
     }
-    if (!client.connected()) {
+
+    xSemaphoreTake(spiMutex, portMAX_DELAY);
+    bool MQTTconnected = client.connected();
+    xSemaphoreGive(spiMutex);
+    if (!MQTTconnected) {
       connectThingsBoard();
     }
+    
     Print("Pushing data...");
     strcpy(stringBuffer,"{");
     for(int i=0;i<sizeof(sensorData)/sizeof(sensorData[0]);i++) {
