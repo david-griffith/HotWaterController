@@ -274,7 +274,7 @@ static void updateCloud(void* pvParameters)
       bool wifiConnected = net.connected();
     xSemaphoreGive(spiMutex);
     
-    if (!wifiConnected) || myRSSI > -1) {
+    if (!wifiConnected || myRSSI > -1) {
       connectWiFi();
     }
 
