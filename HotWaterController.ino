@@ -87,7 +87,7 @@ uint8_t MQTTConnects = 0;
 
 // Set up networking.
 WiFiClient net;
-MQTTClient client(500);
+MQTTClient MQTTclient(500);
 
 // Set up the A/D board
 // This is actually a generic PCF8951 board I got off ebay running over I2C.
@@ -203,7 +203,9 @@ static void connectWiFi() {
    // Resets the ESP32 daughterboard and restarts wifi.
    while ( WiFi.status()  != WL_CONNECTED || WiFi.RSSI() > -1)
   {
-    WiFi.end();
+    xSemaphoreTake(spiMutex, portMAX_DELAY);
+      WiFi.end();
+    xSemaphoreGive(spiMutex); 
     Println("WiFi resetting and connecting...");
     pinMode(WIFI_RST, OUTPUT);
     digitalWrite(WIFI_RST, HIGH);
@@ -236,20 +238,20 @@ static void connectThingsBoard() {
    while ( pingResult < 0);
    Println("Ping check good");
    xSemaphoreTake(spiMutex, portMAX_DELAY);
-      client.disconnect();
+      MQTTclient.disconnect();
    xSemaphoreGive(spiMutex);  
-   bool clientConnected = false;
+   bool MQTTclientConnected = false;
    do {
       MQTTConnects++;
       Print("ThingsBoard connection init...");
       xSemaphoreTake(spiMutex, portMAX_DELAY);
-        client.begin(MQTT_SERVER, net);
-        client.connect("ClientID",APIKEY);
-        clientConnected = client.connected();
+        MQTTclient.begin(MQTT_SERVER, net);
+        MQTTclient.connect("ClientID",APIKEY);
+        MQTTclientConnected = MQTTclient.connected();
       xSemaphoreGive(spiMutex);
       delay(5000);    
    }
-   while (!clientConnected);
+   while (!MQTTclientConnected);
    Println("\nThingsBoard connected.");
 }
 
@@ -267,17 +269,19 @@ static void updateCloud(void* pvParameters)
   while(1) { 
     vTaskDelay(5000/portTICK_PERIOD_MS);
     xSemaphoreTake(spiMutex, portMAX_DELAY);
-      client.loop();
+      MQTTclient.loop();
       uint8_t myRSSI = WiFi.RSSI();
+      bool wifiConnected = net.connected();
     xSemaphoreGive(spiMutex);
     
-    if (!net.connected() || myRSSI > -1) {
+    if (!wifiConnected) || myRSSI > -1) {
       connectWiFi();
     }
 
     xSemaphoreTake(spiMutex, portMAX_DELAY);
-    bool MQTTconnected = client.connected();
+      bool MQTTconnected = MQTTclient.connected();
     xSemaphoreGive(spiMutex);
+    
     if (!MQTTconnected) {
       connectThingsBoard();
     }
@@ -293,7 +297,7 @@ static void updateCloud(void* pvParameters)
     strcat(stringBuffer,"}");
     //Println(stringBuffer);
     xSemaphoreTake(spiMutex, portMAX_DELAY);
-      client.publish("v1/devices/me/telemetry", stringBuffer);
+      MQTTclient.publish("v1/devices/me/telemetry", stringBuffer);
     xSemaphoreGive(spiMutex);
     Println("Pushed!");
   }
