@@ -201,7 +201,11 @@ static float lookupTemp(int rawValue) {
 
 static void connectWiFi() {
    // Resets the ESP32 daughterboard and restarts wifi.
-   while ( WiFi.status()  != WL_CONNECTED || WiFi.RSSI() > -1)
+
+  uint8_t myRSSI = 0;
+  wl_status_t myStatus = WL_DISCONNECTED ;
+
+   while ( myStatus  != WL_CONNECTED || myRSSI > -1)
   {
     xSemaphoreTake(spiMutex, portMAX_DELAY);
       WiFi.end();
@@ -218,7 +222,13 @@ static void connectWiFi() {
     xSemaphoreTake(spiMutex, portMAX_DELAY);
       WiFi.begin(MY_SSID,WIFI_PASSWORD);
     xSemaphoreGive(spiMutex);
+    // Wait a bit. We could poll until we are sure, but 5 seconds isn't much.
     delay(5000);
+    // Check and store status.
+    xSemaphoreTake(spiMutex, portMAX_DELAY);
+      uint8_t myRSSI = WiFi.RSSI();
+      bool myStatus = WiFi.status();
+    xSemaphoreGive(spiMutex);
    }
    Println("WiFi Connected");
 }
