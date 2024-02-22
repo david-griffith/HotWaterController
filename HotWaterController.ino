@@ -46,8 +46,6 @@ SemaphoreHandle_t printMutex = xSemaphoreCreateMutex();
 SemaphoreHandle_t adcMutex = xSemaphoreCreateMutex();
 // Mutex around the pumpSpeed variable to avoid the calculation and the pump drive threads from accessing the variable at the same time.
 SemaphoreHandle_t speedMutex = xSemaphoreCreateMutex();
-// Mutex around SPI access as both the TFT and Wifi use it.
-SemaphoreHandle_t spiMutex = xSemaphoreCreateMutex();
 
 
 // Addesses of the oneWire sensors we are using.
@@ -105,34 +103,6 @@ OneWire oneWire(ONE_WIRE_BUS);
 // Pass our oneWire reference to Dallas Temperature.
 DallasTemperature sensors(&oneWire);
 
-
-static void setupTFT() {
-  // Set up the display. Print these names (that match the order in the sensorData array) down the screen on the left, the update routine does the corresponding values a little to the right.
-  // Note that DMA is turned off in Adafruit_SPITFT.h, it doesn't play well with FreeRTOS it seems.
-  
-  String screenNames[] = {"Ambient","Tank Outlet","Tank Inlet","Collector In","Collector Out","Cold Sensor","Collector Top","RSSI","Pump Drive","Wifi Connects","MQTT Connects", "Max Diff"};
-  // Turn on the backlight and rest the TFT.
-  pinMode(TFT_BACKLIGHT, OUTPUT);
-  digitalWrite(TFT_BACKLIGHT, HIGH);
-  pinMode(TFT_RST, OUTPUT);
-  digitalWrite(TFT_RST, HIGH);
-  delay(10);
-  digitalWrite(TFT_RST, LOW);
-  delay(10);
-  digitalWrite(TFT_RST, HIGH);
-  delay(10);
-  tft.begin();
-  tft.setRotation(3);
-  tft.fillScreen(0x0000);
-  tft.setTextSize(2);
-  tft.setTextColor(HX8357_GREEN);
-  tft.setTextWrap(true);
-  // Loop through the screen names and print them down the side of the screen.
-  for (int i=0;i<12;i++) {
-   tft.setCursor(0,i*20);
-   tft.print(screenNames[i]);
-  }
-}
 
 float sensorGet(const char* wantedName) {
  // A simple helper function to return the value given by the name
@@ -201,15 +171,12 @@ static float lookupTemp(int rawValue) {
 
 static void connectWiFi() {
    // Resets the ESP32 daughterboard and restarts wifi.
+  int8_t myRSSI = 0;
+  uint8_t myStatus = WL_DISCONNECTED ;
 
-  uint8_t myRSSI = 0;
-  wl_status_t myStatus = WL_DISCONNECTED ;
-
-   while ( myStatus  != WL_CONNECTED || myRSSI > -1)
+  while ( myStatus  != WL_CONNECTED || myRSSI > -1)
   {
-    xSemaphoreTake(spiMutex, portMAX_DELAY);
-      WiFi.end();
-    xSemaphoreGive(spiMutex); 
+    WiFi.end();
     Println("WiFi resetting and connecting...");
     pinMode(WIFI_RST, OUTPUT);
     digitalWrite(WIFI_RST, HIGH);
@@ -219,50 +186,42 @@ static void connectWiFi() {
     digitalWrite(WIFI_RST, HIGH);
     delay(1000); 
     wifiConnects ++;
-    xSemaphoreTake(spiMutex, portMAX_DELAY);
-      WiFi.begin(MY_SSID,WIFI_PASSWORD);
-    xSemaphoreGive(spiMutex);
-    // Wait a bit. We could poll until we are sure, but 5 seconds isn't much.
+    WiFi.begin(MY_SSID,WIFI_PASSWORD);
+    // Wait a bit. We could poll until we are sure, but 5 seconds isn't much and should do the trick.
     delay(5000);
-    // Check and store status.
-    xSemaphoreTake(spiMutex, portMAX_DELAY);
-      uint8_t myRSSI = WiFi.RSSI();
-      bool myStatus = WiFi.status();
-    xSemaphoreGive(spiMutex);
-   }
-   Println("WiFi Connected");
+    // Check and store status
+    myRSSI = WiFi.RSSI();
+    myStatus = WiFi.status();
+  }
+  Println("WiFi Connected");
 }
 
 static void connectThingsBoard() {
-   // Connects to my MQTT server.
-   // Use your own API key and server :-P
-   Print("\nConnecting ThingsBoard...");
-   int8_t pingResult = 0;
-   do {
-      xSemaphoreTake(spiMutex, portMAX_DELAY);
-        pingResult = WiFi.ping(MQTT_SERVER);
-      xSemaphoreGive(spiMutex);
+  // Connects to my MQTT server.
+  // Use your own API key and server :-P
+  Print("\nConnecting ThingsBoard...");
+  int8_t pingResult = WiFi.ping(MQTT_SERVER);
+  
+  while ( pingResult < 0); {
       Print("Ping check failed, reconnecting wifi.");
       connectWiFi();
-   }
-   while ( pingResult < 0);
-   Println("Ping check good");
-   xSemaphoreTake(spiMutex, portMAX_DELAY);
-      MQTTclient.disconnect();
-   xSemaphoreGive(spiMutex);  
-   bool MQTTclientConnected = false;
-   do {
+      pingResult = WiFi.ping(MQTT_SERVER);
+  }
+   
+  Println("Ping check good");
+  MQTTclient.disconnect();
+  
+  bool MQTTclientConnected = false;
+  do {
       MQTTConnects++;
       Print("ThingsBoard connection init...");
-      xSemaphoreTake(spiMutex, portMAX_DELAY);
-        MQTTclient.begin(MQTT_SERVER, net);
-        MQTTclient.connect("ClientID",APIKEY);
-        MQTTclientConnected = MQTTclient.connected();
-      xSemaphoreGive(spiMutex);
+      MQTTclient.begin(MQTT_SERVER, net);
+      MQTTclient.connect("ClientID",APIKEY);
       delay(5000);    
-   }
-   while (!MQTTclientConnected);
-   Println("\nThingsBoard connected.");
+      MQTTclientConnected = MQTTclient.connected();
+  }
+  while (!MQTTclientConnected);
+  Println("\nThingsBoard connected.");
 }
 
 static void updateCloud(void* pvParameters)
@@ -278,20 +237,13 @@ static void updateCloud(void* pvParameters)
   
   while(1) { 
     vTaskDelay(5000/portTICK_PERIOD_MS);
-    xSemaphoreTake(spiMutex, portMAX_DELAY);
-      MQTTclient.loop();
-      uint8_t myRSSI = WiFi.RSSI();
-      bool wifiConnected = net.connected();
-    xSemaphoreGive(spiMutex);
-    
+    int8_t myRSSI = WiFi.RSSI();
+    bool wifiConnected = net.connected();
     if (!wifiConnected || myRSSI > -1) {
       connectWiFi();
     }
 
-    xSemaphoreTake(spiMutex, portMAX_DELAY);
-      bool MQTTconnected = MQTTclient.connected();
-    xSemaphoreGive(spiMutex);
-    
+    bool MQTTconnected = MQTTclient.connected();
     if (!MQTTconnected) {
       connectThingsBoard();
     }
@@ -305,11 +257,9 @@ static void updateCloud(void* pvParameters)
       strcat(stringBuffer, tempBuf);
     }
     strcat(stringBuffer,"}");
-    //Println(stringBuffer);
-    xSemaphoreTake(spiMutex, portMAX_DELAY);
-      MQTTclient.publish("v1/devices/me/telemetry", stringBuffer);
-    xSemaphoreGive(spiMutex);
+    MQTTclient.publish("v1/devices/me/telemetry", stringBuffer);
     Println("Pushed!");
+    MQTTclient.loop();
   }
 }
 
@@ -337,9 +287,7 @@ static void readSensors(void* pvParameters)
       sensorData[5] = smooth(sensorData[5],lookupTemp(pcf.analogRead(0)));
       sensorData[6] = smooth(sensorData[6],lookupTemp(pcf.analogRead(1)));
     xSemaphoreGive(adcMutex);
-    xSemaphoreTake(spiMutex, portMAX_DELAY);
       sensorData[7] =  WiFi.RSSI();
-    xSemaphoreGive(spiMutex);
     sensorData[8] = pumpSpeed;
     sensorData[9] = wifiConnects;
     sensorData[10] = MQTTConnects;
@@ -448,22 +396,44 @@ static void calcPumpSpeed(void* pvParameters) {
 }
 
 static void updateScreen(void* pvParameters) {
-  // Updates the screen with all the values in the sensorData array every two seconds.
-  while(1) {
-  Println("Update Screen");
-  xSemaphoreTake(adcMutex, portMAX_DELAY);  
+// Sets up the display and then updates it.   
+// Note that DMA is turned off in Adafruit_SPITFT.h, it doesn't play well with FreeRTOS it seems.
+  
+  String screenNames[] = {"Ambient","Tank Outlet","Tank Inlet","Collector In","Collector Out","Cold Sensor","Collector Top","RSSI","Pump Drive","Wifi Connects","MQTT Connects", "Max Diff"};
+  Print("Setting up display...");
+  // Turn on the backlight and reset the TFT.
+  pinMode(TFT_BACKLIGHT, OUTPUT);
+  digitalWrite(TFT_BACKLIGHT, HIGH);
+  pinMode(TFT_RST, OUTPUT);
+  digitalWrite(TFT_RST, HIGH);
+  delay(10);
+  digitalWrite(TFT_RST, LOW);
+  delay(10);
+  digitalWrite(TFT_RST, HIGH);
+  delay(10);
+  tft.begin();
+  tft.setRotation(3);
+  tft.fillScreen(0x0000);
+  tft.setTextSize(2);
+  tft.setTextColor(HX8357_GREEN);
+  tft.setTextWrap(true);
+  // Loop through the screen names and print them down the side of the screen.
   for (int i=0;i<12;i++) {
-    xSemaphoreTake(spiMutex, portMAX_DELAY);  
-      tft.setCursor(200, i*20);
-      tft.fillRect(200,i*20,90,i*20+20,0x0000);
-      tft.print(sensorGet(sensorNames[i]));
-    xSemaphoreGive(spiMutex);
+    tft.setCursor(0,i*20);
+    tft.print(screenNames[i]);
   }
-  xSemaphoreGive(adcMutex);
-  vTaskDelay(2000/portTICK_PERIOD_MS);
+  Println("Done.");
+  
+  // Updates the screen with all the values in the sensorData array every five seconds.
+  while(1) {
+    Println("Update Screen");
+      for (int i=0;i<12;i++) {
+        tft.setCursor(200, i*20);
+        tft.fillRect(200,i*20,90,i*20+20,0x0000);
+        tft.print(sensorGet(sensorNames[i]));
+      }
+    vTaskDelay(5000/portTICK_PERIOD_MS);
   }
-
-
 }
 
 void findDevices() {
@@ -499,11 +469,6 @@ void setup() {
  pcf.begin();
  pcf.enableDAC(true);
 
- Print("Setting up display...");
- // Set up the display
- setupTFT();
- Println("Done");
- 
  // Set up Onewire sensors
  findDevices();
  sensors.begin();
@@ -527,7 +492,6 @@ void loop() {
   // There's plenty of ram to go around in the PyPortal Titano
 
     Println("Looping in the Idle Task.");
-
     vTaskList(ptrTaskList);
     Println("*******************************************");
     Println("Task         State   Prio    Stack    Num"); 

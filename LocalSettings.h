@@ -1,12 +1,12 @@
 // Local settings. Change your settings here!
 
 //Wifi settings
-#define MY_SSID "mySSID"
-#define WIFI_PASSWORD "PasswordYes"
+#define MY_SSID "DavesInnernet"
+#define WIFI_PASSWORD "Fucker09"
 
 // MQTT settings
-#define	MQTT_SERVER "MQTT.server.com"
-#define APIKEY "my_api_key"
+#define	MQTT_SERVER "dgriffith.com.au"
+#define APIKEY "xD2kUeR9PIyYYGrACAId"
 
 
 // Controller initial start and stop temperatures.
