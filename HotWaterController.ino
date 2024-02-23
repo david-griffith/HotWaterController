@@ -47,7 +47,6 @@ SemaphoreHandle_t adcMutex = xSemaphoreCreateMutex();
 // Mutex around the pumpSpeed variable to avoid the calculation and the pump drive threads from accessing the variable at the same time.
 SemaphoreHandle_t speedMutex = xSemaphoreCreateMutex();
 
-
 // Addesses of the oneWire sensors we are using.
 // On bootup the program scans the bus and outputs these addresses on the serial port.
 DeviceAddress owRoms[][8] = {
@@ -169,58 +168,48 @@ static float lookupTemp(int rawValue) {
    return temp;
 }
 
-static void connectWiFi() {
-   // Resets the ESP32 daughterboard and restarts wifi.
-  int8_t myRSSI = 0;
-  uint8_t myStatus = WL_DISCONNECTED ;
-
-  while ( myStatus  != WL_CONNECTED || myRSSI > -1)
-  {
-    WiFi.end();
-    Println("WiFi resetting and connecting...");
-    pinMode(WIFI_RST, OUTPUT);
-    digitalWrite(WIFI_RST, HIGH);
-    delay(100);
-    digitalWrite(WIFI_RST, LOW);
-    delay(100);
-    digitalWrite(WIFI_RST, HIGH);
-    delay(1000); 
-    wifiConnects ++;
-    WiFi.begin(MY_SSID,WIFI_PASSWORD);
-    // Wait a bit. We could poll until we are sure, but 5 seconds isn't much and should do the trick.
-    delay(5000);
-    // Check and store status
-    myRSSI = WiFi.RSSI();
-    myStatus = WiFi.status();
-  }
-  Println("WiFi Connected");
-}
-
 static void connectThingsBoard() {
-  // Connects to my MQTT server.
+  // Connects to wifi, then my MQTT server.
+  // SSID and password are in LocalSettings.h
   // Use your own API key and server :-P
   Print("\nConnecting ThingsBoard...");
-  int8_t pingResult = WiFi.ping(MQTT_SERVER);
-  
-  while ( pingResult < 0); {
-      Print("Ping check failed, reconnecting wifi.");
-      connectWiFi();
-      pingResult = WiFi.ping(MQTT_SERVER);
-  }
-   
-  Println("Ping check good");
-  MQTTclient.disconnect();
-  
-  bool MQTTclientConnected = false;
+  // Retry until MQTT is good.
   do {
+      // First check if the wifi connection is up.
+      if ( WiFi.status() != WL_CONNECTED || WiFi.RSSI() > -1) {
+        do {
+          WiFi.end();
+          Println("WiFi resetting and connecting...");
+          pinMode(WIFI_RST, OUTPUT);
+          digitalWrite(WIFI_RST, HIGH);
+          delay(100);
+          digitalWrite(WIFI_RST, LOW);
+          delay(100);
+          digitalWrite(WIFI_RST, HIGH);
+          delay(1000); 
+          wifiConnects ++;
+          WiFi.begin(MY_SSID,WIFI_PASSWORD);
+          // Check if connected and if not wait 5 seconds and we'll loop again.
+          if (WiFi.status() != WL_CONNECTED || WiFi.RSSI() > -1) {
+            Println("Failed Wi-Fi connection. Retrying...");
+            vTaskDelay(5000/portTICK_PERIOD_MS);
+          }
+        }
+        while (WiFi.status() != WL_CONNECTED || WiFi.RSSI() > -1);    
+        Println("WiFi Connected");
+      }
+      // Now connect to MQTT server.
       MQTTConnects++;
       Print("ThingsBoard connection init...");
       MQTTclient.begin(MQTT_SERVER, net);
       MQTTclient.connect("ClientID",APIKEY);
-      delay(5000);    
-      MQTTclientConnected = MQTTclient.connected();
+      // Failed? Wait 5 seconds and we'll loop again.
+      if (!MQTTclient.connected()) {
+        Println("Failed MQTT connection. Retrying...");
+        vTaskDelay(5000/portTICK_PERIOD_MS);    
+      }
   }
-  while (!MQTTclientConnected);
+  while (!MQTTclient.connected());
   Println("\nThingsBoard connected.");
 }
 
@@ -230,24 +219,15 @@ static void updateCloud(void* pvParameters)
   // It's my server, there's no rate limites.
   // Adjust the taskDelay accordingly for your server.
   char tempBuf[30];
-
-  // Set up MQTT and wifi
-  connectWiFi();
-  connectThingsBoard();
-  
+ 
   while(1) { 
-    vTaskDelay(5000/portTICK_PERIOD_MS);
-    int8_t myRSSI = WiFi.RSSI();
-    bool wifiConnected = net.connected();
-    if (!wifiConnected || myRSSI > -1) {
-      connectWiFi();
-    }
-
-    bool MQTTconnected = MQTTclient.connected();
-    if (!MQTTconnected) {
+    // Check connection state.
+    if (!MQTTclient.connected()) {    
       connectThingsBoard();
     }
-    
+    // Update RSSI here to keep all the wifi access in this task.
+    sensorData[7] =  WiFi.RSSI();
+    MQTTclient.loop();
     Print("Pushing data...");
     strcpy(stringBuffer,"{");
     for(int i=0;i<sizeof(sensorData)/sizeof(sensorData[0]);i++) {
@@ -259,7 +239,7 @@ static void updateCloud(void* pvParameters)
     strcat(stringBuffer,"}");
     MQTTclient.publish("v1/devices/me/telemetry", stringBuffer);
     Println("Pushed!");
-    MQTTclient.loop();
+    vTaskDelay(5000/portTICK_PERIOD_MS);
   }
 }
 
@@ -287,7 +267,8 @@ static void readSensors(void* pvParameters)
       sensorData[5] = smooth(sensorData[5],lookupTemp(pcf.analogRead(0)));
       sensorData[6] = smooth(sensorData[6],lookupTemp(pcf.analogRead(1)));
     xSemaphoreGive(adcMutex);
-      sensorData[7] =  WiFi.RSSI();
+    // Wifi RSSI is updated in the updateCloud task to keep all the wifi access in there.
+    //sensorData[7] =  WiFi.RSSI();
     sensorData[8] = pumpSpeed;
     sensorData[9] = wifiConnects;
     sensorData[10] = MQTTConnects;
