@@ -1,10 +1,13 @@
 # HotWaterController [![Actions Status](https://github.com/david-griffith/HotWaterController/actions/workflows/main.yml/badge.svg)](https://github.com/david-griffith/HotWaterController/actions/)
- Controller for solar hot water system with recirc pump.
- Uses a PyPortal Titano board and FreeRTOS, and a generic PCF8591 I/O board for analog sensing and pump control.
+ This repository contains a controller for a solar hot water system with a ground-mounted storage tank and circulating water pump controlling flow to solar collectors on the roof.
+ Pump drive is proportional to temperature difference between the water at the bottom of the storage tank and the temperature at the top of the solar collectors.
+ The control alogrithm should give a reasonably adaptive system that tries to maximise the temperature gain across the collectors while minimising the temperature loss in the pipework between the collector and storage tank.
+ Uses a PyPortal Titano board and FreeRTOS/Arduino, and a generic PCF8591 I/O board for analog sensing and pump motor control.
+ Circuit diagrams and PCB files for a control board to house the PCF8591 board to read analog NTC thermistors and allow control of a 240V pump are also included.
  
 ## Operation
 After the intial startup, a number of FreeRTOS tasks look after various aspects of the system. Unlike "normal Arduino" with a simple loop function, the tasks all run concurrently in a time-sliced manner.
-Because any task can be interrupted in the middle of something, shared resources are managed via mutexes - locks that only allow one task at a time to access that resource. There are mutexes around shared hardware (I2C and SPI) and a few global variables to ensure that their state does not unexpectedly change during calculations.
+Because any task can be interrupted in the middle of something, shared resources are managed via mutexes - locks that only allow one task at a time to access that resource. There are mutexes around shared hardware (I2C and serial) as well as a mutex for the recirculating pump speed to ensure that their states do not unexpectedly change during calculations.
 
 ### Startup
  - Initialise the hardware and screen.
@@ -18,12 +21,10 @@ Because any task can be interrupted in the middle of something, shared resources
  - Temperatures are read every two seconds in one task.
  - Pump speed is calculated every two seconds in another task.
  - If HotSensor - ColdSensor > 8, begin operating the circulating pump.
- - Pump runs on a 5 second duty cycle, and is PWM'd according to the temperature difference between the hot and cold sensors. 8 degree difference or higher, gives 100 percent output. 4 degrees difference or lower gives 0 percent output.
- - The temperature difference automatically adjusts from it's initial 8 degree starting point depending on the pump speed.
- - If the pump runs at 100 percent, the difference is slowly increased from 8 degrees, multiplying by 1.01 every calculation cycle. This throttles back the pump and increases the temperature difference across the solar collectors for maximum temperature gain.
- - Between 100 and 30 percent the pump is driven proportionally according to the temperature difference.
- - If the pump runs below 30 percent the difference is decreased by 0.98 every calculation cycle. This increases the pump speed so that residence time in the pipework from the collectors is minimised (too much cool off in the pipes if the flow is too low.)
- - Overall this should give a reasonably adaptive system that tries to maximise solar gain and minimise loss in pipework.
+ - The pump runs on a 5 second duty cycle, and is PWM'd according to the temperature difference between the hot and cold sensors. 8 degree difference or higher, gives 100 percent output. 4 degrees difference or lower gives 0 percent output.
+ - The temperature difference automatically adjusts from it's initial 8 degree starting point depending on the pump speed. If the pump runs at 100 percent, the difference is slowly increased from 8 degrees, multiplying by 1.01 every calculation cycle. This throttles back the pump and increases the temperature difference across the solar collectors for maximum temperature gain.
+ - Between 100 and 40 percent the pump is driven proportionally according to the temperature difference.
+ - If the pump runs below 40 percent the temperature difference is decreased by 0.98 every calculation cycle. This increases the pump speed so that residence time in the pipework from the collectors is minimised (too much cool off in the pipes if the flow is too low.)
  - If the duty cycle is above 90 or below 10, round to 100 or 0 respectively to avoid short pulses on the pump.
  - Once the temperature difference drops below 4 degrees the pump is shut off.
  - If the ColdSensor temperature is above 70 degrees, trigger a cool-off cycle. When the HotSensor is 30 degrees below the ColdSensor (eg late afternoon or night), turn on the pump and circulate hot water from the tank through the collectors until the ColdSensor temp drops below 60 degrees. This helps prevent over temperature events and loss of hot water via the pressure relief valve on the tank.
@@ -31,9 +32,10 @@ Because any task can be interrupted in the middle of something, shared resources
  
  
 ### Outputs
- - An output task drives a small circulating pump via the PCF8591 DAC, which controls a zero-crossing IC that drives a SCR for the pump. The pump is a small 20 watt circulating pump that can do approximately 3 litres a minute. The pump speed value from 0 - 100 percent is converted to a 5 second on-off duty cycle for this pump.
- - A display task updates the PyPortal Titano display with basic information on sensors and pump drive, as well as RSSI and the number of wifi/MQTT connects.
+ - An output task drives a small circulating pump via the PCF8591 DAC, which controls a zero-crossing IC that drives a SCR for the pump. The pump can circulate approximately 3 litres a minute through the solar collectors and draws 20 watts at 240VAC. The pump speed value from 0 - 100 percent is converted to a 5 second on-off duty cycle for this pump.
+ - A display task updates the PyPortal Titano display with basic information on sensors and pump drive, as well as RSSI and the total number of wifi/MQTT connects since power on.
  
 ### Monitoring
- - Connects to wifi and maintains that connection.
- - A task sends data via MQTT to a ThingsBoard instance for display. The ThingsBoard instance also sends alert emails if the tank temperature drops below a lwoer threshold. Setting up a ThingsBoard or MQTT server is left as an exercise for the user.
+ - A task connects to wifi and a Thingsboard instance via MQTT and maintains that connection.
+ - It then updates the Thingsboard instance with the sensor values, pump drive, current RSSI, and the number of total wifi and MQTT connects since power on.
+ - The ThingsBoard instance also sends alert emails if the tank temperature drops below a lower threshold. Setting up a ThingsBoard or MQTT server is left as an exercise for the user.
