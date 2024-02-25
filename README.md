@@ -1,4 +1,4 @@
-# HotWaterController
+# HotWaterController [![Actions Status](https://github.com/david-griffith/HotWaterController/actions/workflows/main.yml/badge.svg)](https://github.com/david-griffith/HotWaterController/actions/)
  Controller for solar hot water system with recirc pump.
  Uses a PyPortal Titano board and FreeRTOS, and a generic PCF8591 I/O board for analog sensing and pump control.
  
