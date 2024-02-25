@@ -13,12 +13,12 @@ jobs:
           sketch-paths: |
             - ./
           libraries: |
-            - "Adafruit BusIO"
-            - "Adafruit GFX Library"
-            - "Adafruit HX8357 Library"
-            - "Adafruit PCF8591"
-            - "DallasTemperature"
-            - "FreeRTOS SAMD51"
-            - "MQTT"
-            - "OneWire"
-            - "WiFiNINA"
+            - name: "Adafruit BusIO"
+            - name: "Adafruit GFX Library"
+            - name: "Adafruit HX8357 Library"
+            - name: "Adafruit PCF8591"
+            - name: "DallasTemperature"
+            - name: "FreeRTOS SAMD51"
+            - name: "MQTT"
+            - name: "OneWire"
+            - name: "WiFiNINA"
