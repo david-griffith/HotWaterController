@@ -7,10 +7,11 @@ jobs:
       - uses: actions/checkout@v2
       - uses: arduino/compile-sketches@v1.1.0
         with:
+          fqbn: "adafruit:samd:adafruit_pyportal_m4_titano"
           platforms: |
-            - name: arduino:samd
-            - source-url: "https://adafruit.github.io/arduino-board-index/package_adafruit_index.json"
-              name: "adafruit:samd"
+            - name: "adafruit:samd"
+              source-url: "https://adafruit.github.io/arduino-board-index/package_adafruit_index.json"
+              
           sketch-paths: |
             - ./HotWaterController.ino
           libraries: |
