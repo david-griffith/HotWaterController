@@ -8,7 +8,7 @@ jobs:
       - uses: arduino/compile-sketches@v1.1.0
         with:
           platforms: |
-            - name: adafruit:samd
+            - name: "adafruit:samd"
             - source-url: https://adafruit.github.io/arduino-board-index/package_adafruit_index.json
           sketch-paths: |
             - ./
