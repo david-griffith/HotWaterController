@@ -11,7 +11,7 @@ jobs:
             - source-url: "https://adafruit.github.io/arduino-board-index/package_adafruit_index.json"
               name: "adafruit:samd"
           sketch-paths: |
-            - ./
+            - ./HotWaterController.ino
           libraries: |
             - name: "Adafruit BusIO"
             - name: "Adafruit GFX Library"
