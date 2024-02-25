@@ -1,16 +1,20 @@
 # HotWaterController [![Actions Status](https://github.com/david-griffith/HotWaterController/actions/workflows/main.yml/badge.svg)](https://github.com/david-griffith/HotWaterController/actions/)
- This repository contains a controller for a solar hot water system with a ground-mounted storage tank and circulating water pump controlling flow to solar collectors on the roof.
- Pump drive is proportional to temperature difference between the water at the bottom of the storage tank and the temperature at the top of the solar collectors.
- The control alogrithm should give a reasonably adaptive system that tries to maximise the temperature gain across the collectors while minimising the temperature loss in the pipework between the collector and storage tank.
- Uses a PyPortal Titano board and FreeRTOS/Arduino, and a generic PCF8591 I/O board for analog sensing and pump motor control.
- Circuit diagrams and PCB files for a control board to house the PCF8591 board to read analog NTC thermistors and allow control of a 240V pump are also included.
+ This repository contains a controller for a solar hot water system.
+ 
+ The system has a ground-mounted storage tank and a circulating water pump controlling flow to solar collectors on the roof.
+ Pump drive is proportional to the temperature difference between the water at the bottom of the storage tank and the temperature at the top of the solar collectors.
+ The control alogrithm that is used should give a reasonably adaptive system that tries to maximise the temperature gain across the collectors, while also minimising the temperature loss in the pipework between the collector and storage tank.
+ 
+ The controller hardware is based on a PyPortal Titano board. It uses FreeRTOS/Arduino for the software, with a generic PCF8591 I/O board for analog sensing and pump motor control. Dallas OneWire temperature sensors are used to augment the original system's hot and cold NTC sensors. Data from all the sensors is packaged up and sent to a ThingsBoard instance for remote monitoring.
+ 
+ Circuit diagrams and PCB files for the control board are also included. The board houses the generic PCF8591 board that is used to read analog NTC thermistors and allow control of a 240V pump via a zero-crossing IC and a SCR. 
  
 ## Operation
-After the intial startup, a number of FreeRTOS tasks look after various aspects of the system. Unlike "normal Arduino" with a simple loop function, the tasks all run concurrently in a time-sliced manner.
-Because any task can be interrupted in the middle of something, shared resources are managed via mutexes - locks that only allow one task at a time to access that resource. There are mutexes around shared hardware (I2C and serial) as well as a mutex for the recirculating pump speed to ensure that their states do not unexpectedly change during calculations.
+After the intial startup, a number of FreeRTOS tasks look after various aspects of the system. Unlike "normal Arduino" with simple setup and loop functions, FreeRTOS tasks (standalone functions with their own internal loops) all run concurrently in a time-sliced manner.
+Because any task can be interrupted in the middle of something, access to shared resources are managed via mutexes - locks that only allow one task at a time to access that resource. In this code there are mutexes around shared hardware (I2C and serial) as well as a mutex for the recirculating pump speed variable to ensure that it's state does not unexpectedly change during calculations.
 
 ### Startup
- - Initialise the hardware and screen.
+ - Initialise the hardware.
  - Start the FreeRTOS tasks. A stack monitoring thread runs in the idle task and prints to the serial port.
 
 ### Inputs
