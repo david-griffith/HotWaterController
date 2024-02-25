@@ -5,7 +5,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - uses: arduino/compile-sketches@v1.10
+      - uses: arduino/compile-sketches@v1.1.0
         with:
           platforms: |
             - name: adafruit:samd
