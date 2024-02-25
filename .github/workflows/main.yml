@@ -1,0 +1,24 @@
+on:
+  - push
+jobs:
+  compile-sketch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: arduino/compile-sketches@v1.10
+        with:
+          platforms: |
+            - name: adafruit:samd
+            - source-url: https://adafruit.github.io/arduino-board-index/package_adafruit_index.json
+          sketch-paths: |
+            - ./
+          libraries: |
+            - Adafruit BusIO
+            - Adafruit GFX Library
+            - Adafruit HX8357 Library
+            - Adafruit PCF8591
+            - DallasTemperature
+            - FreeRTOS SAMD51
+            - MQTT
+            - OneWire
+            - WiFiNINA
