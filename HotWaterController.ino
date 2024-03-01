@@ -318,24 +318,51 @@ static void calcPumpSpeed(void* pvParameters) {
  // Switch off when hotSensor - coldSensor < START_MIN_DIFF
  // ramp from 20 to 100 percent in between 4 and 8.
  // If we are above initial maxDiff, increase maxDiff for this run to throttle back the pump drive and get higher collector temps.
- // 
+ // Run the pump for an extra minute if hotSensor - coldSensor < minDiff using a countdown timer, reset if temps warm back up.
  bool pumpTriggered = false;
  bool overTemp = false;
+ bool countdownRunning = false;
+ int countdown = 30;
  float maxDiff = START_MAX_DIFF;
  float minDiff = START_MIN_DIFF;
  
  while(1) {
  Println("CalcPumpSpeed");
   float tempDiff = sensorGet("hotSensor")-sensorGet("coldSensor");
-  if (tempDiff > maxDiff) pumpTriggered = true;
+  // Turn on the pump if the tempDiff rises above maxDiff.
+  // If we were on a countdown, reset it.
+  if (tempDiff > maxDiff) {
+    pumpTriggered = true;
+    countdownRunning = false;
+    countdown = 30;
+  }
   // If things are proper hot turn the pump on regardless.
   if (sensorGet("hotSensor") > 100.0) pumpTriggered = true;
-  
+
+  // We have reached the shutoff point. Run the pump for 1 more minute at 100 percent speed to push the remaining warm water in the line to the tank.
+  // This is for days where there isn't enough solar input to run the pump at a throttled rate and we cycle intermittently.
+  // In those situations only a small amount of water leaves the collector and a fair bit just sits and cools off in the pipework.
+  // Push that hot water to the tank.
   if (tempDiff < minDiff) {
-    pumpTriggered = false;
-    maxDiff = START_MAX_DIFF;
-    pumpSpeed = 0;
-  }
+    // Wrap pumpspeed in a mutex so we don't read it in DrivePump while setting it.
+    xSemaphoreTake(speedMutex, portMAX_DELAY);
+      // Trigger the countdown only if the pump is currently running.
+      if (pumpTriggered == true) {
+        countdownRunning = true;
+        pumpSpeed = 100;
+        pumpTriggered = false;
+        maxDiff = START_MAX_DIFF;
+      }
+      // While countdown running, decrement counter
+      if (countdownRunning == true) countdown--;
+      // Hit zero, turn pump off and reset counter.
+      if (countdown == 0) {
+        pumpSpeed = 0;
+        countdown = 30;
+        countdownRunning = false;
+      }
+    xSemaphoreGive(speedMutex);
+  } 
   
   if (pumpTriggered == true) {
     // Wrap pumpspeed in a mutex so we don't read it in DrivePump while setting it.
