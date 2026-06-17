@@ -30,7 +30,7 @@ Because any task can be interrupted in the middle of something, access to shared
  - Between 100 and 40 percent the pump is driven proportionally according to the temperature difference.
  - If the pump runs below 40 percent the temperature difference is decreased by 0.98 every calculation cycle. This increases the pump speed so that residence time in the pipework from the collectors is minimised (too much cool off in the pipes if the flow is too low.)
  - If the duty cycle is above 90 or below 10, round to 100 or 0 respectively to avoid short pulses on the pump.
- - Once the temperature difference drops below 4 degrees the pump is shut off.
+ - Once the temperature difference drops below 4 degrees the pump is shut off. Before it is shut off, the pump runs at 100 percent for 60 seconds (30 task cycles) to purge the line from the collector of any remaining heated water. This caters for times when there is low solar input, pump cycles are short, and pipework between collector and tank is long. Without the extra run time, hot water from short pump cycles cools off in the pipes before it reaches the tank.
  - If the ColdSensor temperature is above 70 degrees, trigger a cool-off cycle. When the HotSensor is 30 degrees below the ColdSensor (eg late afternoon or night), turn on the pump and circulate hot water from the tank through the collectors until the ColdSensor temp drops below 60 degrees. This helps prevent over temperature events and loss of hot water via the pressure relief valve on the tank.
  - If the collector temperature is greater than 100 degrees, turn on the pump regardless of the temperature difference between hot and cold sensors.
  
