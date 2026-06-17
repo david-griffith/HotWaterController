@@ -5,10 +5,15 @@
 #define WIFI_PASSWORD "Fucker09"
 
 // MQTT settings
-#define	MQTT_SERVER "dgriffith.com.au"
-#define APIKEY "xD2kUeR9PIyYYGrACAId"
 
+const char* mqtt_server = "192.168.1.110";  // MQTT Server URL
+const uint16_t mqtt_server_port = 1883;               // MQTT Server port
 
-// Controller initial start and stop temperatures.
-#define START_MAX_DIFF 8;
-#define START_MIN_DIFF 4;
+const char*  _MQTTUSER = "";                    // MQTT Username
+const char*  _MQTTPASSWORD = "";                // MQTT Password
+
+const char*  _MANUF = "DaveSoft";                   // Manufacturer name
+const char*  _MODEL = "SolaControlla";             // Device model name
+const char*  _VERSION = "v0.1";               // Device firmware version
+const char*  _NAME = "Solar Hot Water";               // Device name in Home Assistant
+byte  _MAC[] = {0,0,0,0,0,0,1};
