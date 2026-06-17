@@ -5,7 +5,7 @@
  Pump drive is proportional to the temperature difference between the water at the bottom of the storage tank and the temperature at the top of the solar collectors.
  The control alogrithm that is used should give a reasonably adaptive system that tries to maximise the temperature gain across the collectors, while also minimising the temperature loss in the pipework between the collector and storage tank.
  
- The controller hardware is based on a PyPortal Titano board. It uses FreeRTOS/Arduino for the software, with a generic PCF8591 I/O board for analog sensing and pump motor control. Dallas OneWire temperature sensors are used to augment the original system's hot and cold NTC sensors. Data from all the sensors is packaged up and sent to a ThingsBoard instance for remote monitoring.
+ The controller hardware is based on a PyPortal Titano board. It uses FreeRTOS/Arduino for the software, with a generic PCF8591 I/O board for analog sensing and pump motor control. Dallas OneWire temperature sensors are used to augment the original system's hot and cold NTC sensors. Data from all the sensors is packaged up and sent to a Home Assistant instance via MQTT for remote monitoring.
  
  Circuit diagrams and PCB files for the control board are also included. The board houses the generic PCF8591 board that is used to read analog NTC thermistors and allow control of a 240V pump via a zero-crossing IC and a SCR. 
  
@@ -40,6 +40,6 @@ Because any task can be interrupted in the middle of something, access to shared
  - A display task updates the PyPortal Titano display with basic information on sensors and pump drive, as well as RSSI and the total number of wifi/MQTT connects since power on.
  
 ### Monitoring
- - A task connects to wifi and a Thingsboard instance via MQTT and maintains that connection.
- - It then updates the Thingsboard instance with the sensor values, pump drive, current RSSI, and the number of total wifi and MQTT connects since power on.
- - The ThingsBoard instance also sends alert emails if the tank temperature drops below a lower threshold. Setting up a ThingsBoard or MQTT server is left as an exercise for the user.
+ - A task connects to wifi and a Home Assistant instance via MQTT and maintains that connection.
+ - It then updates Home Assistant with the sensor values, pump drive, current RSSI, and the number of total wifi and MQTT connects since power on.
+ - Home Assistant can be configured to send alert notifications if the tank temperature drops below a lower threshold. Setting up a Home Assistant or MQTT server is left as an exercise for the user.
